@@ -67,3 +67,12 @@ Model:
 
 ---
 
+## 📂 Data Source
+
+The dataset used in this project was obtained from **Kaggle**:  
+[🔗 Healthcare Dataset](https://www.kaggle.com/datasets/prasad22/healthcare-dataset)
+
+This synthetic dataset contains information on patient demographics, medical conditions, diagnostic test results, hospital admissions, medications, and billing details.
+
+---
+
