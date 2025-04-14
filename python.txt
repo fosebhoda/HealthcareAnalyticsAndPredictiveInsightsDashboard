@@ -1,0 +1,123 @@
+# Import required libraries
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Load dataset
+df = pd.read_csv("C:/Users/goddy/Desktop/Analytics Projects/HealthAnalysticsApr2025/to_pyth_forModelling.csv")
+
+# Drop irrelevant or redundant columns
+df.drop([
+    'Patient_ID', 'Last_name', 'First_Name', 'Admission_Date', 'Room_Number', 
+    'Doctor', 'Hospital', 'Insurance_Provider', 'Billing_Amount', 
+    'Discharge_Date', 'Is_Emergency_Admission', 'Is_Weekend_Admission', 'Age'
+], axis=1, inplace=True)
+
+# Drop leftover duplicated or unused columns
+df.drop(['Is_Weekend_Admission.1'], axis=1, inplace=True)
+
+# One-hot encode categorical features
+df = pd.get_dummies(df, columns=[
+    'Gender', 'Blood_Type', 'Medical_Condition', 'Medication',
+    'Admission_Type', 'Stay_Duration_Days', 'Billing_Category',
+    'AgeGroup', 'Admission_Month'
+])
+
+# Label encode the target variable
+le = LabelEncoder()
+df['Test_Results'] = le.fit_transform(df['Test_Results'])  # 0 = Abnormal, 1 = Inconclusive, 2 = Normal
+
+# Split features and target
+X = df.drop('Test_Results', axis=1)
+y = df['Test_Results']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Random Forest (base model)
+m1 = RandomForestClassifier(random_state=42)
+m1.fit(X_train, y_train)
+y_pred = m1.predict(X_test)
+
+# Evaluate base model
+print("Random Forest - Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("\nRandom Forest - Classification Report:\n", classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Feature Importance
+importances = m1.feature_importances_
+feature_names = X.columns
+feat_imp = pd.Series(importances, index=feature_names).sort_values(ascending=False)
+
+# Plot top 10 features
+plt.figure(figsize=(10,6))
+sns.barplot(x=feat_imp[:10], y=feat_imp.index[:10])
+plt.title("Top 10 Feature Importances")
+plt.tight_layout()
+plt.show()
+
+# Tried using only top 10 features (optional experiment)
+top_features = feat_imp[:10]
+features_to_keep = top_features.index.tolist()
+
+# Use only top features (optional path)
+X_top = df[features_to_keep]
+y_top = df['Test_Results']
+X_train_top, X_test_top, y_train_top, y_test_top = train_test_split(X_top, y_top, test_size=0.2, random_state=42)
+
+# Train on top features (optional)
+# m1.fit(X_train_top, y_train_top)
+# y_pred_top = m1.predict(X_test_top)
+
+# Revert back to using all features since top 10 alone didn't improve performance
+
+# Hyperparameter tuning with GridSearchCV
+param_grid = {
+    'n_estimators': [50, 100, 150],
+    'max_depth': [None, 5, 10],
+    'min_samples_split': [2, 4],
+}
+
+grid = GridSearchCV(RandomForestClassifier(random_state=42), param_grid, cv=3)
+grid.fit(X_train, y_train)
+
+print("Best Parameters:", grid.best_params_)
+print("Best CV Score:", grid.best_score_)
+
+# Evaluate best model from grid search
+best_model = grid.best_estimator_
+y_pred_best = best_model.predict(X_test)
+
+print("Tuned Random Forest - Confusion Matrix:\n", confusion_matrix(y_test, y_pred_best))
+print("\nTuned Random Forest - Classification Report:\n", classification_report(y_test, y_pred_best, target_names=le.classes_))
+
+# Cross-validation on entire dataset
+cv_scores = cross_val_score(best_model, X, y, cv=5)
+print("Cross-Validation Scores:", cv_scores)
+print("Average CV Score:", cv_scores.mean())
+
+# Logistic Regression model
+m2 = LogisticRegression(max_iter=1000)
+m2.fit(X_train, y_train)
+y_pred_log = m2.predict(X_test)
+
+print("Logistic Regression - Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred_log))
+print("\nLogistic Regression - Classification Report:")
+print(classification_report(y_test, y_pred_log, target_names=le.classes_))
+
+# Decision Tree model
+m3 = DecisionTreeClassifier(random_state=42)
+m3.fit(X_train, y_train)
+y_pred_tree = m3.predict(X_test)
+
+print("Decision Tree - Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred_tree))
+print("\nDecision Tree - Classification Report:")
+print(classification_report(y_test, y_pred_tree, target_names=le.classes_))

@@ -1,0 +1,239 @@
+-- ────────────────────────────────────────────────────────────────────────────────
+-- 🏥 Healthcare Dataset - SQL Data Cleaning & Exploration Workflow
+-- Author: Oseaga Ebhodaghe
+-- Description: Data Cleaning, Preprocessing, and EDA using SQL
+-- Tools: Microsoft SQL Server / T-SQL
+-- ────────────────────────────────────────────────────────────────────────────────
+
+-- 🔍 Step 1: Initial Data Inspection
+SELECT * FROM healthcare_dataset;
+
+-- Check column data types and nullability
+SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'healthcare_dataset';
+
+-- Basic Summary: Row Count, Unique Genders, Missing Names
+SELECT 
+    COUNT(*) AS total_rows, 
+    COUNT(DISTINCT Gender) AS unique_genders,
+    SUM(CASE WHEN Name IS NULL THEN 1 ELSE 0 END) AS missing_name_values
+FROM healthcare_dataset;
+
+-- Check unique values in various categorical columns
+SELECT DISTINCT Name FROM healthcare_dataset;
+SELECT DISTINCT Blood_Type FROM healthcare_dataset;
+SELECT DISTINCT Medical_Condition FROM healthcare_dataset;
+SELECT DISTINCT Doctor FROM healthcare_dataset;
+SELECT DISTINCT Hospital FROM healthcare_dataset;
+SELECT DISTINCT Insurance_Provider FROM healthcare_dataset;
+SELECT DISTINCT Admission_Type FROM healthcare_dataset;
+SELECT DISTINCT Medication FROM healthcare_dataset;
+SELECT DISTINCT Test_Results FROM healthcare_dataset;
+
+-- Dynamically check for NULLs across all columns
+DECLARE @sql NVARCHAR(MAX);
+SET @sql = 'SELECT * FROM healthcare_dataset WHERE ' + 
+    STUFF((SELECT ' OR ' + QUOTENAME(COLUMN_NAME) + ' IS NULL'
+           FROM INFORMATION_SCHEMA.COLUMNS 
+           WHERE TABLE_NAME = 'healthcare_dataset'
+           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 4, '');
+EXEC sp_executesql @sql;
+
+-- 🧹 Step 2: Handling Missing & Inconsistent Data
+
+-- Remove rows with critical missing values
+DELETE FROM healthcare_dataset WHERE Age IS NULL OR Admission_Type IS NULL;
+
+-- Replace missing ages with median
+WITH Median_Age AS (
+    SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY Age) OVER () AS Median_Age
+    FROM healthcare_dataset
+)
+UPDATE healthcare_dataset
+SET Age = (SELECT Median_Age FROM Median_Age)
+WHERE Age IS NULL;
+
+-- Standardize Admission Type (e.g., "emergency" ➜ "EMERG")
+UPDATE healthcare_dataset
+SET admission_type = 'EMERG'
+WHERE LOWER(admission_type) IN ('emergency');
+
+-- Format date columns
+ALTER TABLE healthcare_dataset ALTER COLUMN date_of_admission DATE;
+ALTER TABLE healthcare_dataset ALTER COLUMN discharge_date DATE;
+
+-- 🚨 Step 3: Outlier Detection & Removal
+
+-- Check for age and billing outliers
+SELECT * FROM healthcare_dataset WHERE Age > 120 OR Age < 0;
+SELECT * FROM healthcare_dataset WHERE Billing_Amount < 0;
+
+-- Remove invalid billing values
+DELETE FROM healthcare_dataset WHERE Billing_Amount < 0;
+
+-- 📊 Step 4: Summary Statistics
+SELECT 
+    MIN(age) AS min_age, MAX(age) AS max_age, AVG(age) AS avg_age,
+    MIN(billing_amount) AS min_bill, MAX(billing_amount) AS max_bill, AVG(billing_amount) AS avg_bill
+FROM healthcare_dataset;
+
+-- 🧱 Step 5: Column Engineering - Splitting Name, Generating IDs
+
+-- Add First and Last Name columns
+ALTER TABLE healthcare_dataset
+ADD First_Name VARCHAR(100),
+    Last_Name VARCHAR(100);
+
+-- Split Full Name into First and Last
+UPDATE healthcare_dataset
+SET 
+    First_Name = UPPER(SUBSTRING(name, 1, 1)) + LOWER(SUBSTRING(name, 2, CHARINDEX(' ', name) - 1)),
+    Last_Name = UPPER(SUBSTRING(name, CHARINDEX(' ', name) + 1, 1)) + LOWER(SUBSTRING(name, CHARINDEX(' ', name) + 2, LEN(name)))
+WHERE name IS NOT NULL AND CHARINDEX(' ', name) > 0;
+
+-- Remove original Name column
+ALTER TABLE healthcare_dataset DROP COLUMN name;
+
+-- Review cleaned data
+SELECT * FROM healthcare_dataset;
+
+-- Create unique Patient ID using GUID
+ALTER TABLE healthcare_dataset ADD Patient_ID VARCHAR(50);
+UPDATE healthcare_dataset
+SET Patient_ID = LEFT(CONVERT(VARCHAR(50), NEWID()), 8);
+
+-- View final structure
+SELECT Patient_ID, Last_name, First_Name, Age, Gender, Blood_Type, Medical_Condition, Medication, Test_Results, 
+    Date_of_Admission, Admission_Type, Room_Number, Doctor, Hospital, Insurance_Provider, Billing_Amount, Discharge_Date
+FROM healthcare_dataset;
+
+-- 🗃 Step 6: Save Cleaned Data to New Table
+SELECT * INTO healthcare_dataset_clean FROM healthcare_dataset;
+
+-- 🧼 Step 7: Remove Duplicates from healthcare_dataset_clean
+WITH CTE AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (
+      PARTITION BY Last_name, First_Name, Age, Gender, Blood_Type, Medical_Condition, Medication, Test_Results, 
+                   Date_of_Admission, Admission_Type, Room_Number, Doctor, Hospital, Insurance_Provider, Billing_Amount, Discharge_Date
+      ORDER BY (SELECT NULL)
+    ) AS rn
+  FROM healthcare_dataset_clean
+)
+DELETE FROM CTE WHERE rn > 1;
+
+-- 🔬 Step 8: Feature Engineering & Deeper EDA
+
+-- Patient demographics
+SELECT COUNT(DISTINCT Hospital) AS Unique_Hospitals FROM healthcare_dataset_clean;
+SELECT Gender, COUNT(*) AS Patients FROM healthcare_dataset_clean GROUP BY Gender;
+SELECT Medical_Condition, AVG(Age) AS Average_Age FROM healthcare_dataset_clean GROUP BY Medical_Condition;
+
+-- Hospital & Billing Insights
+SELECT Hospital, SUM(Billing_Amount) AS Total_Billing FROM healthcare_dataset_clean GROUP BY Hospital;
+SELECT Medical_Condition, AVG(Billing_Amount) AS Avg_Billing FROM healthcare_dataset_clean GROUP BY Medical_Condition;
+SELECT Admission_Type, AVG(Billing_Amount) AS Avg_Billing FROM healthcare_dataset_clean GROUP BY Admission_Type;
+
+-- Stay Duration Metrics
+SELECT AVG(DATEDIFF(DAY, Date_of_Admission, Discharge_Date)) AS Avg_Stay_Days
+FROM healthcare_dataset_clean
+WHERE Date_of_Admission IS NOT NULL AND Discharge_Date IS NOT NULL;
+
+-- Add new features: stay duration, billing category, emergency status, weekend flag
+WITH BillingWithCategory AS (
+    SELECT *,
+        NTILE(3) OVER (ORDER BY Billing_Amount) AS Billing_Tile
+    FROM healthcare_dataset_clean
+)
+SELECT 
+    Patient_ID, Last_name, First_Name, Age, Gender, Blood_Type, Medical_Condition, Medication, Test_Results, 
+    Date_of_Admission, Admission_Type, Room_Number, Doctor, Hospital, Insurance_Provider, Billing_Amount, Discharge_Date,
+
+    -- Feature 1: Hospital Stay Duration
+    DATEDIFF(DAY, Date_of_Admission, Discharge_Date) AS Stay_Duration_Days,
+
+    -- Feature 2: Billing Category (Low/Medium/High)
+    CASE 
+        WHEN Billing_Tile = 1 THEN 'Low'
+        WHEN Billing_Tile = 2 THEN 'Medium'
+        WHEN Billing_Tile = 3 THEN 'High'
+    END AS Billing_Category,
+
+    -- Feature 3: Emergency Admission Flag
+    CASE 
+        WHEN Admission_Type = 'Emergency' THEN 1 
+        ELSE 0 
+    END AS Is_Emergency_Admission,
+
+    -- Feature 4: Weekend Admission Flag
+    CASE 
+        WHEN DATEPART(WEEKDAY, Date_of_Admission) IN (1, 7) THEN 1
+        ELSE 0
+    END AS Is_Weekend_Admission
+
+INTO healthcare_dataset_03
+FROM BillingWithCategory;
+
+-- 🧮 Step 9: Relationship Exploration
+
+-- Standardize 'emerg' and 'elective' text labels
+UPDATE healthcare_dataset_03 SET Admission_Type = 'Emergency' 
+WHERE TRIM(LOWER(admission_type)) IN ('emerg');
+UPDATE healthcare_dataset_03 SET Admission_Type = 'Optional' 
+WHERE TRIM(LOWER(admission_type)) IN ('elective');
+
+-- Analyze Medical_Condition vs Test Results
+SELECT Medical_Condition, Test_Results, COUNT(*) AS Count
+FROM healthcare_dataset_03
+GROUP BY Medical_Condition, Test_Results
+ORDER BY Medical_Condition, Test_Results;
+
+-- Analyze Medication vs Test Results
+SELECT Medication, Test_Results, COUNT(*) AS Count
+FROM healthcare_dataset_03
+GROUP BY Medication, Test_Results
+ORDER BY Medication, Test_Results;
+
+-- Patient profile breakdown by AgeGroup & Test_Results
+SELECT 
+  CASE 
+    WHEN Age < 18 THEN 'Child'
+    WHEN Age BETWEEN 18 AND 64 THEN 'Adult'
+    ELSE 'Senior'
+  END AS AgeGroup,
+  Gender,
+  Test_Results,
+  COUNT(*) AS Total
+FROM healthcare_dataset_03
+GROUP BY 
+  CASE 
+    WHEN Age < 18 THEN 'Child'
+    WHEN Age BETWEEN 18 AND 64 THEN 'Adult'
+    ELSE 'Senior'
+  END,
+  Gender,
+  Test_Results
+ORDER BY AgeGroup, Gender, Test_Results;
+
+-- Final Enriched Table Preview
+SELECT 
+  CASE 
+    WHEN Age < 18 THEN 'Child'
+    WHEN Age BETWEEN 18 AND 64 THEN 'Adult'
+    ELSE 'Senior'
+  END AS AgeGroup,
+  Gender,
+  Stay_Duration_Days,
+  Billing_Category,
+  Medication,
+  Admission_Type,
+  Medical_Condition,
+  Blood_Type,
+  Hospital,
+  Insurance_Provider,
+  Is_Weekend_Admission,
+  DATENAME(MONTH, Date_of_Admission) AS Admission_Month,
+  Test_Results
+-- INTO Cleaned_PatientData -- optional save
+FROM healthcare_dataset_03;
