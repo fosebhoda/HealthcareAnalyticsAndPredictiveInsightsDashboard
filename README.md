@@ -67,6 +67,16 @@ Model:
 
 ---
 
+## 🚀 **Next Steps & Key Takeaways**
+
+This project not only sharpened my skills in SQL, Power BI, and Python, but also deepened my understanding of how healthcare data can drive actionable insights. The experience in predictive modeling, data visualization, and feature engineering gave me valuable exposure to real-world challenges in the healthcare domain.
+
+I’m excited to continue building on these skills and explore more complex datasets to make impactful contributions to the healthcare industry through data.
+
+Feel free to reach out if you'd like to discuss healthcare analytics, predictive modeling, or collaborate on similar projects!
+
+---
+
 ## 📂 Data Source
 
 The dataset used in this project was obtained from **Kaggle**:  
