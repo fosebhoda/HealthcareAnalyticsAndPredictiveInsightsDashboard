@@ -62,10 +62,8 @@ Defined a multi-class classification task to predict a patient's **Test Result**
 - Medication Prescribed
 
 Model:
-- Used **Random Forest Classifier**
-- Evaluated with a confusion matrix and feature importance
+- Used **Random Forest Classifier** **Logistic Regression** **Decision Tree**
+- Evaluated with a confusion matrix and feature importance based on **Random Forest Classifier**
 
 ---
-
-## 📁 Folder Structure
 
