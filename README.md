@@ -60,9 +60,10 @@ Defined a multi-class classification task to predict a patient's **Test Result**
 - Age, Gender, Medical Condition
 - Admission Type
 - Medication Prescribed
+- Other Key Features as needed
 
 Model:
-- Used **Random Forest Classifier** **Logistic Regression** **Decision Tree**
+- Used **Random Forest Classifier,** **Logistic Regression, and** **Decision Tree** models
 - Evaluated with a confusion matrix and feature importance based on **Random Forest Classifier**
 
 ---
